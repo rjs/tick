@@ -1,9 +1,15 @@
-from datetime import date, datetime, timezone
+from datetime import date as Date
+from datetime import datetime, timezone
+from zoneinfo import available_timezones
 
+from textual import work
 from textual.app import App, ComposeResult
-from textual.widgets import DataTable, Label
+from textual.containers import Horizontal
+from textual.widgets import DataTable, Input, Label
 
 from tick.config import DEFAULTS
+from tick.geo import lookup_timezone
+from tick.llm import OllamaError, send_command
 from tick.times import compute_hours
 
 
@@ -16,11 +22,29 @@ class TickApp(App):
     DataTable {
         margin: 0 2;
     }
+    #footer {
+        dock: bottom;
+        height: auto;
+        padding: 0 2;
+    }
+    #command-input {
+        width: 1fr;
+    }
+    #status-label {
+        width: auto;
+        padding: 0 1;
+    }
+    .hidden {
+        display: none;
+    }
     """
 
     def compose(self) -> ComposeResult:
         yield Label("", id="date-label")
         yield DataTable(cursor_type="row", zebra_stripes=True)
+        with Horizontal(id="footer"):
+            yield Input(placeholder="Type a command...", id="command-input")
+            yield Label("", id="status-label", classes="hidden")
 
     def on_mount(self) -> None:
         self.load_defaults()
@@ -28,7 +52,7 @@ class TickApp(App):
 
     def load_defaults(self) -> None:
         self.locales = list(DEFAULTS)
-        self.time_window = date.today()
+        self.time_window = Date.today()
 
     def rebuild_table(self) -> None:
         label = self.query_one("#date-label", Label)
@@ -52,3 +76,66 @@ class TickApp(App):
 
         for row in rows:
             table.add_row(*row)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.input.value = ""
+        self._process_command(event.value)
+
+    @work(thread=True, exclusive=True)
+    def _process_command(self, user_input: str) -> None:
+        self.call_from_thread(self._show_loading, True)
+        try:
+            tool_calls = send_command(user_input)
+            self.call_from_thread(self._execute_tool_calls, tool_calls)
+        except OllamaError as exc:
+            self.call_from_thread(self.notify, str(exc), severity="error")
+        finally:
+            self.call_from_thread(self._show_loading, False)
+
+    def _show_loading(self, visible: bool) -> None:
+        label = self.query_one("#status-label", Label)
+        if visible:
+            label.update("Thinking...")
+            label.remove_class("hidden")
+        else:
+            label.add_class("hidden")
+
+    def _execute_tool_calls(self, tool_calls: list[dict]) -> None:
+        dispatch = {
+            "add_locale": self._add_locale,
+            "remove_locale": self._remove_locale,
+            "set_time_window": self._set_time_window,
+        }
+        for tc in tool_calls:
+            handler = dispatch.get(tc["name"])
+            if handler:
+                handler(**tc["arguments"])
+        self.rebuild_table()
+
+    def _add_locale(self, name: str, iana_tz: str | None = None) -> None:
+        iana_tz = self._validate_iana_tz(name, iana_tz)
+        if iana_tz is None:
+            self.notify(f"Could not resolve timezone for '{name}'", severity="warning")
+            return
+        if any(loc["name"].lower() == name.lower() for loc in self.locales):
+            return
+        self.locales.append({"name": name, "iana_tz": iana_tz})
+
+    def _remove_locale(self, name: str) -> None:
+        self.locales = [
+            loc for loc in self.locales if loc["name"].lower() != name.lower()
+        ]
+
+    def _set_time_window(self, date: str) -> None:
+        try:
+            self.time_window = Date.fromisoformat(date)
+        except ValueError:
+            self.notify(f"Invalid date: '{date}'", severity="warning")
+
+    def _validate_iana_tz(self, name: str, iana_tz: str | None) -> str | None:
+        if iana_tz and iana_tz in available_timezones():
+            return iana_tz
+        fallback = lookup_timezone(name)
+        if fallback and fallback in available_timezones():
+            return fallback
+        return None
