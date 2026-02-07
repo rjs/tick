@@ -6,16 +6,6 @@ A TUI app that shows a table of hours across time zones, with an LLM-driven inpu
 
 ## Frame
 
-### Source
-
-> I want to create a simple TUI app here. it should talk to the internet to get a reliable source of what the current time zone is in a specified locale. eg Detroit. or Brasil. or Poland. Then it should show a table of every hour for each of the locales that i ask. each locale is a column in the table, and the rows are hours in the day, and the local time then is in each cell.
->
-> i should be able to specify a few default time zones that are always loaded.
->
-> it's important that it fetches the data freshly every time it loads (so it is accurate), and it should default to a list of the hours in the current day. (eg the next 12 hrs).
->
-> there should be an input field at the bottom where i can make request to a very simple local LLM to instruct the app to add/remove locales and or change the "time window" which is the day that we are looking at. via tool calls. so i could be able to say "today" or "feb 12" etc. "show me times feb 12 in brasil". and the screen will reload to show me the table with brasil included and the time window changed to feb 12 (of the current year).
-
 ### Problem
 
 - Coordinating across time zones is mentally taxing — you have to look up offsets, do math, and remember DST rules
@@ -25,7 +15,7 @@ A TUI app that shows a table of hours across time zones, with an LLM-driven inpu
 ### Outcome
 
 - User sees a clear hour-by-hour table across multiple time zones at a glance
-- Time zone data is always fresh and accurate (fetched from the internet on each load)
+- Time zone data is always accurate (IANA tz database via local library, DST-aware)
 - User can naturally instruct the app via text to add/remove locales and change the time window
 
 ---
@@ -35,7 +25,7 @@ A TUI app that shows a table of hours across time zones, with an LLM-driven inpu
 | ID | Requirement | Status |
 |----|-------------|--------|
 | R0 | Show a table: rows = hours, columns = locales, cells = local time | Core goal |
-| R1 | Fetch time zone data from the internet on every app load (no stale/hardcoded offsets) | Must-have |
+| R1 | Time zone offsets and DST rules must be accurate (use IANA tz database via local library) | Must-have |
 | R2 | Accept locale names in natural form (e.g. "Detroit", "Brasil", "Poland") and resolve to tz offsets | Must-have |
 | R3 | Support a configurable list of default time zones that are always loaded | Must-have |
 | R4 | Default time window is "today" — the next 12 hours from now | Must-have |
@@ -45,35 +35,22 @@ A TUI app that shows a table of hours across time zones, with an LLM-driven inpu
 | R8 | Screen reloads/refreshes to reflect changes after LLM commands | Must-have |
 | R9 | Runs as a TUI (terminal UI) | Must-have |
 | R10 | Uses a local LLM (simple, lightweight) | Must-have |
+| R11 | A single input command can combine actions — change time window and add/remove locales together (e.g. "feb 12 in brasil") | Must-have |
 
 ---
 
-## A: Single-shape TUI with internet tz lookup + local LLM input
+## A: Python TUI with Ollama-driven tz resolution + local tz library
 
-This is the shape you described. Let me break it into parts.
+LLM does double duty: handles natural language commands AND resolves locale names to IANA identifiers. Local tz library handles all time computation. Python + Textual for the TUI, Ollama + Qwen2.5-3B for the LLM.
 
 | Part | Mechanism | Flag |
 |------|-----------|:----:|
-| **A1** | **TUI shell** — Terminal UI framework renders a table + input field layout | |
-| **A2** | **Time zone resolver** — Takes natural locale names (e.g. "Detroit"), calls an internet API to resolve to IANA tz identifier and current UTC offset | ⚠️ |
-| **A3** | **Hour table builder** — Given a list of tz offsets and a time window (date + hour range), computes the local time for each hour in each zone and produces the table data | |
-| **A4** | **Default config** — A config file or constant defining the default locale list loaded on startup | |
-| **A5** | **LLM input handler** — Captures text from the input field, sends to a local LLM with tool definitions for `add_locale`, `remove_locale`, `set_time_window` | ⚠️ |
-| **A6** | **Tool executor** — Receives tool calls from the LLM, mutates app state (locale list, time window), triggers re-render | |
-
-### Open questions on flagged parts
-
-**A2 — Time zone resolver (⚠️):** What internet source do we use? Options:
-- A public tz API (e.g. WorldTimeAPI, TimeAPI.io, Google Time Zone API)
-- A geocoding API to resolve "Detroit" → lat/lon, then a tz API to resolve lat/lon → tz
-- Something simpler?
-
-**A5 — LLM input handler (⚠️):** What local LLM setup? Options:
-- Ollama running locally with a small model (e.g. llama3, phi3)
-- llama.cpp directly
-- Something else?
-
-And: what tool-call protocol? (native function calling vs. structured output parsing)
+| **A1** | **TUI shell** — Textual app with three regions: a `Label` (top) showing the current date ("Feb 7, 2026"), a `DataTable` (middle) showing the hour grid, and an `Input` (bottom) for typing commands. The date label is always visible so the user sees which day the table represents. App holds state: `locales: list[{name, iana_tz}]`, `time_window: date`, `hours: range`. On state change, updates date label and rebuilds table via A3. | |
+| **A2** | **Local tz library** — `zoneinfo.ZoneInfo(iana_tz)` creates timezone objects. `datetime.now(tz)` and `datetime(y,m,d,h, tzinfo=tz)` compute local times. `zoneinfo.available_timezones()` provides the ~590 valid IANA identifiers for validation. | |
+| **A3** | **Hour table builder** — Iterates `hours` range for `time_window` date. For each hour, creates a UTC datetime, converts to each locale's timezone via `dt.astimezone(tz)`, formats as `"3:00 PM"`. Returns list of rows, each row is a list of formatted time strings. Columns are locale names. | |
+| **A4** | **Default config** — `config.json` or `DEFAULTS` dict mapping display names to IANA identifiers, e.g. `{"Detroit": "America/Detroit", "London": "Europe/London"}`. Loaded on startup to populate initial `locales` state. | |
+| **A5** | **LLM input handler** — On `Input.Submitted`, sends user text to `ollama.chat('qwen2.5:3b', messages=[system_prompt, user_msg], tools=[add_locale, remove_locale, set_time_window])`. System prompt instructs: "Parse commands into tool calls. Resolve locale names to IANA identifiers." Returns `response.message.tool_calls` list to A6. Async call so TUI stays responsive (~1-2s). | |
+| **A6** | **Tool executor** — Loops over tool calls from A5. `add_locale(name, iana_tz)`: validates `iana_tz in available_timezones()`, appends to `locales`. `remove_locale(name)`: removes matching entry from `locales`. `set_time_window(date)`: parses ISO date string, updates `time_window`. After all calls processed, triggers A1 re-render. If `iana_tz` validation fails, falls back to Open-Meteo geocoding API (`geocoding-api.open-meteo.com/v1/search?name={name}&count=1` → `results[0].timezone`). | |
 
 ---
 
@@ -82,32 +59,29 @@ And: what tool-call protocol? (native function calling vs. structured output par
 | Req | Requirement | Status | A |
 |-----|-------------|--------|---|
 | R0 | Show a table: rows = hours, columns = locales, cells = local time | Core goal | ✅ |
-| R1 | Fetch time zone data from the internet on every app load (no stale/hardcoded offsets) | Must-have | ❌ |
-| R2 | Accept locale names in natural form (e.g. "Detroit", "Brasil", "Poland") and resolve to tz offsets | Must-have | ❌ |
+| R1 | Time zone offsets and DST rules must be accurate (use IANA tz database via local library) | Must-have | ✅ |
+| R2 | Accept locale names in natural form (e.g. "Detroit", "Brasil", "Poland") and resolve to tz offsets | Must-have | ✅ |
 | R3 | Support a configurable list of default time zones that are always loaded | Must-have | ✅ |
 | R4 | Default time window is "today" — the next 12 hours from now | Must-have | ✅ |
 | R5 | LLM-driven input field at the bottom of the TUI for natural language commands | Must-have | ✅ |
-| R6 | LLM can add/remove locale columns via tool calls | Must-have | ❌ |
-| R7 | LLM can change the time window (e.g. "today", "feb 12", "next tuesday") via tool calls | Must-have | ❌ |
+| R6 | LLM can add/remove locale columns via tool calls | Must-have | ✅ |
+| R7 | LLM can change the time window (e.g. "today", "feb 12", "next tuesday") via tool calls | Must-have | ✅ |
 | R8 | Screen reloads/refreshes to reflect changes after LLM commands | Must-have | ✅ |
 | R9 | Runs as a TUI (terminal UI) | Must-have | ✅ |
-| R10 | Uses a local LLM (simple, lightweight) | Must-have | ❌ |
+| R10 | Uses a local LLM (simple, lightweight) | Must-have | ✅ |
 
-**Notes:**
-- R1 fails: A2 (tz resolver) is flagged — we don't yet know which API or approach
-- R2 fails: A2 (tz resolver) is flagged — natural name resolution mechanism unknown
-- R6 fails: A5 (LLM input) is flagged — tool call protocol undecided
-- R7 fails: A5 (LLM input) is flagged — tool call protocol undecided
-- R10 fails: A5 (LLM input) is flagged — local LLM runtime undecided
+| R11 | A single input command can combine actions — change time window and add/remove locales together (e.g. "feb 12 in brasil") | Must-have | ✅ |
+
+All requirements pass. No flagged unknowns remain.
 
 ---
 
 ## Decisions needed
 
-1. **Language/framework for TUI** — What language do you want to build this in? (Python + Textual? Go + Bubble Tea? Rust + Ratatui? Something else?)
+1. ~~**Language/framework for TUI**~~ — **Resolved.** Python + Textual.
 
-2. **Time zone data source (A2)** — How should we resolve "Detroit" → timezone? Need to pick an API.
+2. ~~**Time zone data source (A2)**~~ — **Resolved.** LLM resolves names → IANA identifiers. Local `zoneinfo` computes times. Open-Meteo geocoding as fallback.
 
-3. **Local LLM runtime (A5)** — Ollama? llama.cpp? What model?
+3. ~~**Local LLM runtime (A5)**~~ — **Resolved.** Ollama + `qwen2.5:3b` (~2GB). Python `ollama` library.
 
-4. **Tool call protocol (A5/A6)** — How does the LLM communicate structured commands back to the app?
+4. ~~**Tool call protocol (A5/A6)**~~ — **Resolved.** Ollama native tool calling. Define Python functions with type annotations, Ollama auto-generates JSON schema, returns structured `tool_calls` in response.
