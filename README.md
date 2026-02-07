@@ -4,7 +4,7 @@ A TUI app that shows a table of hours across time zones, with a natural language
 
 Type "add Brasil" and a new column appears. Type "feb 12" and the date changes. Type "paris feb 18" and both happen at once.
 
-Built as an example of shaping and building a project from 0 to 1 in [Claude Code](https://claude.com/claude-code), using [shaping skills](https://github.com/rjs/shaping-skills).
+This is the project for the case study [Shaping 0-1 with Claude Code](https://x.com/rjs/status/2020184079350563263). Built using [Claude Code](https://claude.com/claude-code) with [shaping skills](https://github.com/rjs/shaping-skills).
 
 ## How it works
 
