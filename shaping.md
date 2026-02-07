@@ -220,6 +220,143 @@ flowchart TB
 
 ---
 
+## Slices
+
+### Slice Summary
+
+| # | Slice | Parts | Demo |
+|---|-------|-------|------|
+| V1 | Table with defaults | A1, A2, A3, A4 | "App launches, shows today's hours across default time zones" |
+| V2 | LLM commands work | A5, A6 | "Type 'feb 12 in Brasil' — date changes, Brasil column appears" |
+
+### V1: Table with defaults
+
+| # | Component | Affordance | Control | Wires Out | Returns To |
+|---|-----------|------------|---------|-----------|------------|
+| U1 | header | date label ("Feb 7, 2026") | render | — | — |
+| U2 | table | column headers (locale names) | render | — | — |
+| U3 | table | hour rows (formatted local times) | render | — | — |
+| N11 | app | `load_defaults()` | call | → S1, → S2, → N7 | — |
+| N7 | app | `rebuild_table()` | call | → N9 | → U1, → U2, → U3 |
+| N9 | app | `compute_hours(locales, time_window)` | call | — | → N7 |
+| S1 | app | `locales` | store | — | → N9 |
+| S2 | app | `time_window` | store | — | → N9 |
+
+### V2: LLM commands work
+
+| # | Component | Affordance | Control | Wires Out | Returns To |
+|---|-----------|------------|---------|-----------|------------|
+| U4 | footer | command input | type + submit | → N1 | — |
+| U5 | footer | loading indicator ("Thinking...") | render | — | — |
+| N1 | app | `on_input_submitted()` | call | → N2, → S3 | — |
+| N2 | ollama | `ollama.chat(model, messages, tools)` | call | — | → N3 |
+| N3 | app | `execute_tool_calls(tool_calls)` | call | → N4, → N5, → N6 | → N7 |
+| N4 | app | `add_locale(name, iana_tz)` | call | → N8 | → S1 |
+| N5 | app | `remove_locale(name)` | call | — | → S1 |
+| N6 | app | `set_time_window(date)` | call | — | → S2 |
+| N8 | app | `validate_iana_tz(iana_tz)` | call | → N10 | → N4 |
+| N10 | open-meteo | geocoding API | call | — | → N8 |
+| S3 | app | `loading` | store | — | → U5 |
+
+### Sliced Breadboard
+
+```mermaid
+flowchart TB
+    subgraph slice1["V1: TABLE WITH DEFAULTS"]
+        subgraph header["header"]
+            U1["U1: date label"]
+        end
+        subgraph table["table"]
+            U2["U2: column headers"]
+            U3["U3: hour rows"]
+        end
+        S1["S1: locales"]
+        S2["S2: time_window"]
+        N7["N7: rebuild_table()"]
+        N9["N9: compute_hours()"]
+        N11["N11: load_defaults()"]
+    end
+
+    subgraph slice2["V2: LLM COMMANDS WORK"]
+        subgraph footer["footer"]
+            U4["U4: command input"]
+            U5["U5: loading indicator"]
+        end
+        S3["S3: loading"]
+        N1["N1: on_input_submitted()"]
+        N2["N2: ollama.chat()"]
+        N3["N3: execute_tool_calls()"]
+        N4["N4: add_locale()"]
+        N5["N5: remove_locale()"]
+        N6["N6: set_time_window()"]
+        N8["N8: validate_iana_tz()"]
+        N10["N10: geocoding API"]
+    end
+
+    slice1 ~~~ slice2
+
+    %% Startup
+    N11 --> S1
+    N11 --> S2
+    N11 --> N7
+
+    %% Rebuild
+    N7 --> N9
+    S1 -.-> N9
+    S2 -.-> N9
+    N9 -.-> N7
+    N7 --> U1
+    N7 --> U2
+    N7 --> U3
+
+    %% Command flow
+    U4 -->|submit| N1
+    N1 --> S3
+    S3 -.-> U5
+    N1 --> N2
+    N2 -.-> N3
+
+    %% Tool execution
+    N3 --> N4
+    N3 --> N5
+    N3 --> N6
+    N4 --> N8
+    N8 --> N10
+    N10 -.-> N8
+    N8 -.-> N4
+    N4 --> S1
+    N5 --> S1
+    N6 --> S2
+
+    %% Cross-slice: rebuild after commands
+    N3 --> N7
+
+    style slice1 fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
+    style slice2 fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
+    style header fill:transparent,stroke:#888,stroke-width:1px
+    style table fill:transparent,stroke:#888,stroke-width:1px
+    style footer fill:transparent,stroke:#888,stroke-width:1px
+
+    classDef ui fill:#ffb6c1,stroke:#d87093,color:#000
+    classDef nonui fill:#d3d3d3,stroke:#808080,color:#000
+    classDef store fill:#e6e6fa,stroke:#9370db,color:#000
+
+    class U1,U2,U3,U4,U5 ui
+    class N1,N2,N3,N4,N5,N6,N7,N8,N9,N10,N11 nonui
+    class S1,S2,S3 store
+```
+
+**Legend:**
+- **Green boundary (V1)** = Table with defaults — pure rendering, no external deps
+- **Blue boundary (V2)** = LLM commands — Ollama input, tool execution, rebuild
+- **Pink nodes (U)** = UI affordances
+- **Grey nodes (N)** = Code affordances
+- **Lavender nodes (S)** = Data stores
+- **Solid lines** = Wires Out (calls, triggers, writes)
+- **Dashed lines** = Returns To (return values, data reads)
+
+---
+
 ## Decisions needed
 
 1. ~~**Language/framework for TUI**~~ — **Resolved.** Python + Textual.
