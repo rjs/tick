@@ -1,10 +1,10 @@
 # Tick
 
-A TUI app that shows a table of hours across time zones, with a natural language input for modifying the view.
-
-Type "add Brasil" and a new column appears. Type "feb 12" and the date changes. Type "paris feb 18" and both happen at once.
-
 This is the project for the case study [Shaping 0-1 with Claude Code](https://x.com/rjs/status/2020184079350563263). Built using [Claude Code](https://claude.com/claude-code) with [shaping skills](https://github.com/rjs/shaping-skills).
+
+It's a tiny little TUI app that shows a table of hours across time zones, with a natural language input for modifying the view.
+
+Eg. type "add Brasil" and a new column appears. Type "feb 12" and the date changes. Type "paris feb 18" and both happen at once.
 
 ## How it works
 
@@ -33,7 +33,7 @@ uv run tick
 
 Type into the input field at the bottom of the TUI:
 
-| Command | What happens |
+| Example | What happens |
 |---|---|
 | `add Brasil` | Adds a Brasil column (America/Sao_Paulo) |
 | `feb 12` | Changes the date to Feb 12 |
