@@ -76,6 +76,150 @@ All requirements pass. No flagged unknowns remain.
 
 ---
 
+## Detail A: Breadboard
+
+### Places
+
+| # | Place | Description |
+|---|-------|-------------|
+| P1 | TUI Main | The single-screen TUI: date label, hour table, command input |
+| P2 | Ollama | Local LLM service (external process) |
+| P3 | Open-Meteo | Geocoding fallback API (external) |
+
+### UI Affordances
+
+| # | Place | Component | Affordance | Control | Wires Out | Returns To |
+|---|-------|-----------|------------|---------|-----------|------------|
+| U1 | P1 | header | date label ("Feb 7, 2026") | render | — | — |
+| U2 | P1 | table | column headers (locale names) | render | — | — |
+| U3 | P1 | table | hour rows (formatted local times) | render | — | — |
+| U4 | P1 | footer | command input | type + submit | → N1 | — |
+| U5 | P1 | footer | loading indicator ("Thinking...") | render | — | — |
+
+### Code Affordances
+
+| # | Place | Component | Affordance | Control | Wires Out | Returns To |
+|---|-------|-----------|------------|---------|-----------|------------|
+| N1 | P1 | app | `on_input_submitted()` | call | → N2, → S3 | — |
+| N2 | P2 | ollama | `ollama.chat(model, messages, tools)` | call | — | → N3 |
+| N3 | P1 | app | `execute_tool_calls(tool_calls)` | call | → N4, → N5, → N6 | → N7 |
+| N4 | P1 | app | `add_locale(name, iana_tz)` | call | → N8 | → S1 |
+| N5 | P1 | app | `remove_locale(name)` | call | — | → S1 |
+| N6 | P1 | app | `set_time_window(date)` | call | — | → S2 |
+| N7 | P1 | app | `rebuild_table()` | call | → N9 | → U1, → U2, → U3 |
+| N8 | P1 | app | `validate_iana_tz(iana_tz)` | call | → N10 | → N4 |
+| N9 | P1 | app | `compute_hours(locales, time_window)` | call | — | → N7 |
+| N10 | P3 | open-meteo | `geocoding-api.open-meteo.com/v1/search` | call | — | → N8 |
+| N11 | P1 | app | `load_defaults()` | call | — | → S1, → S2, → N7 |
+
+### Data Stores
+
+| # | Place | Store | Description |
+|---|-------|-------|-------------|
+| S1 | P1 | `locales` | `list[{name: str, iana_tz: str}]` — active locale columns |
+| S2 | P1 | `time_window` | `date` — the day being displayed |
+| S3 | P1 | `loading` | `bool` — whether LLM call is in progress |
+
+### Wiring Narrative
+
+**Startup flow:** `N11 load_defaults()` reads config → writes default locales to `S1`, today's date to `S2` → calls `N7 rebuild_table()` → `N9 compute_hours()` uses `zoneinfo` to convert each hour to each locale's timezone → `N7` updates `U1` (date label), `U2` (column headers), `U3` (hour rows).
+
+**Command flow:** User types in `U4` → submit fires `N1` → sets `S3` loading (shows `U5`) → calls `N2` Ollama with tools → LLM returns tool calls → `N3` loops them: `N4` adds locale (validates via `N8`, falls back to `N10`), `N5` removes locale, `N6` sets date → after all calls, `N3` calls `N7` rebuild → table updates.
+
+### Mermaid
+
+```mermaid
+flowchart TB
+    subgraph P1["P1: TUI Main"]
+        subgraph header["header"]
+            U1["U1: date label"]
+        end
+
+        subgraph table["table"]
+            U2["U2: column headers"]
+            U3["U3: hour rows"]
+        end
+
+        subgraph footer["footer"]
+            U4["U4: command input"]
+            U5["U5: loading indicator"]
+        end
+
+        S1["S1: locales"]
+        S2["S2: time_window"]
+        S3["S3: loading"]
+
+        N1["N1: on_input_submitted()"]
+        N3["N3: execute_tool_calls()"]
+        N4["N4: add_locale()"]
+        N5["N5: remove_locale()"]
+        N6["N6: set_time_window()"]
+        N7["N7: rebuild_table()"]
+        N8["N8: validate_iana_tz()"]
+        N9["N9: compute_hours()"]
+        N11["N11: load_defaults()"]
+    end
+
+    subgraph P2["P2: Ollama"]
+        N2["N2: ollama.chat()"]
+    end
+
+    subgraph P3["P3: Open-Meteo"]
+        N10["N10: geocoding API"]
+    end
+
+    %% Startup
+    N11 --> S1
+    N11 --> S2
+    N11 --> N7
+
+    %% Command flow
+    U4 -->|submit| N1
+    N1 --> S3
+    S3 -.-> U5
+    N1 --> N2
+    N2 -.-> N3
+
+    %% Tool execution
+    N3 --> N4
+    N3 --> N5
+    N3 --> N6
+    N4 --> N8
+    N8 --> N10
+    N10 -.-> N8
+    N8 -.-> N4
+    N4 --> S1
+    N5 --> S1
+    N6 --> S2
+
+    %% Rebuild
+    N3 --> N7
+    N7 --> N9
+    S1 -.-> N9
+    S2 -.-> N9
+    N9 -.-> N7
+    N7 --> U1
+    N7 --> U2
+    N7 --> U3
+
+    classDef ui fill:#ffb6c1,stroke:#d87093,color:#000
+    classDef nonui fill:#d3d3d3,stroke:#808080,color:#000
+    classDef store fill:#e6e6fa,stroke:#9370db,color:#000
+
+    class U1,U2,U3,U4,U5 ui
+    class N1,N2,N3,N4,N5,N6,N7,N8,N9,N10,N11 nonui
+    class S1,S2,S3 store
+```
+
+**Legend:**
+- **Pink nodes (U)** = UI affordances (things users see/interact with)
+- **Grey nodes (N)** = Code affordances (methods, handlers, services)
+- **Lavender nodes (S)** = Data stores (state)
+- **Solid lines** = Wires Out (calls, triggers, writes)
+- **Dashed lines** = Returns To (return values, data reads)
+
+---
+
 ## Decisions needed
 
 1. ~~**Language/framework for TUI**~~ — **Resolved.** Python + Textual.
