@@ -1,5 +1,4 @@
 from datetime import date as Date
-from datetime import datetime, timezone
 from zoneinfo import available_timezones
 
 from textual import work
@@ -58,13 +57,11 @@ class TickApp(App):
         label = self.query_one("#date-label", Label)
         label.update(self.time_window.strftime("%b %-d, %Y"))
 
-        start_hour = datetime.now(timezone.utc).hour
-
         rows = compute_hours(
             self.locales,
             self.time_window,
-            hour_range=12,
-            start_hour=start_hour,
+            hour_range=24,
+            start_hour=0,
         )
 
         table = self.query_one(DataTable)

@@ -10,7 +10,7 @@ class TestAppLaunch:
             assert len(app.locales) == 3
             assert app.locales[0]["name"] == "Detroit"
             table = app.query_one("DataTable")
-            assert table.row_count == 12
+            assert table.row_count == 24
 
     async def test_input_widget_present(self):
         async with TickApp().run_test() as pilot:
