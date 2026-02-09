@@ -25,17 +25,26 @@ Rules:
   "Paris" → name="Paris", iana_tz="Europe/Paris"
   "Sydney" → name="Sydney", iana_tz="Australia/Sydney"
 - For dates, convert to ISO 8601 format (YYYY-MM-DD). Use {year} as the year when not specified.
+- Use the "after" parameter on add_locale to control position. If "after" is omitted, the locale is appended at the end.
+- To move an existing locale, call add_locale with its current iana_tz and the desired "after" value.
+- To place a locale first (before all others), set after to "FIRST".
+- Examples:
+  "add Tokyo" → add_locale(name="Tokyo", iana_tz="Asia/Tokyo")
+  "add Tokyo after Detroit" → add_locale(name="Tokyo", iana_tz="Asia/Tokyo", after="Detroit")
+  "move London to first" → add_locale(name="London", iana_tz="Europe/London", after="FIRST")
+  "move London after Tokyo" → add_locale(name="London", iana_tz="Europe/London", after="Tokyo")
 - A single command may require multiple tool calls (e.g. "feb 12 in Brasil" → set_time_window + add_locale).
 - Only use the provided tools. Do not output plain text.
 """
 
 
-def add_locale(name: str, iana_tz: str) -> None:
-    """Add a locale column to the timezone table.
+def add_locale(name: str, iana_tz: str, after: str | None = None) -> None:
+    """Add a new locale column, or reposition an existing one.
 
     Args:
         name: Display name for the locale (e.g. "Brasil", "Tokyo").
         iana_tz: IANA timezone identifier (e.g. "America/Sao_Paulo", "Asia/Tokyo").
+        after: Place this locale after the named locale. Omit to append at end.
     """
 
 

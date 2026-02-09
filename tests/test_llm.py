@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tick.llm import OllamaError, send_command
+from tick.llm import TOOLS, OllamaError, send_command
 
 
 def _make_tool_call(name, arguments):
@@ -17,6 +17,13 @@ def _mock_response(tool_calls=None):
     resp = MagicMock()
     resp.message.tool_calls = tool_calls
     return resp
+
+
+class TestTools:
+    def test_add_locale_has_after_param(self):
+        import inspect
+        sig = inspect.signature(next(t for t in TOOLS if t.__name__ == "add_locale"))
+        assert "after" in sig.parameters
 
 
 class TestSendCommand:

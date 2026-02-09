@@ -92,6 +92,98 @@ class TestPersistence:
             assert mtime_before == mtime_after
 
 
+class TestPositioning:
+    @patch("tick.app.send_command")
+    async def test_add_locale_after_inserts_at_position(self, mock_send, config_path):
+        mock_send.return_value = [
+            {"name": "add_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo", "after": "Detroit"}},
+        ]
+        async with TickApp().run_test() as pilot:
+            app = pilot.app
+            inp = app.query_one("#command-input")
+            inp.value = "add Brasil after Detroit"
+            await inp.action_submit()
+            await pilot.pause()
+
+            assert app.locales[1]["name"] == "Brasil"
+            assert len(app.locales) == 4
+
+    @patch("tick.app.send_command")
+    async def test_add_locale_after_unknown_appends(self, mock_send, config_path):
+        mock_send.return_value = [
+            {"name": "add_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo", "after": "Nonexistent"}},
+        ]
+        async with TickApp().run_test() as pilot:
+            app = pilot.app
+            inp = app.query_one("#command-input")
+            inp.value = "add Brasil after Nonexistent"
+            await inp.action_submit()
+            await pilot.pause()
+
+            assert app.locales[-1]["name"] == "Brasil"
+            assert len(app.locales) == 4
+
+    @patch("tick.app.send_command")
+    async def test_move_existing_locale_after(self, mock_send, config_path):
+        mock_send.return_value = [
+            {"name": "add_locale", "arguments": {"name": "Tokyo", "iana_tz": "Asia/Tokyo", "after": "Detroit"}},
+        ]
+        async with TickApp().run_test() as pilot:
+            app = pilot.app
+            inp = app.query_one("#command-input")
+            inp.value = "move Tokyo after Detroit"
+            await inp.action_submit()
+            await pilot.pause()
+
+            names = [loc["name"] for loc in app.locales]
+            assert names == ["Detroit", "Tokyo", "London"]
+
+    @patch("tick.app.send_command")
+    async def test_move_existing_locale_to_first(self, mock_send, config_path):
+        mock_send.return_value = [
+            {"name": "add_locale", "arguments": {"name": "Tokyo", "iana_tz": "Asia/Tokyo", "after": "FIRST"}},
+        ]
+        async with TickApp().run_test() as pilot:
+            app = pilot.app
+            inp = app.query_one("#command-input")
+            inp.value = "move Tokyo to first"
+            await inp.action_submit()
+            await pilot.pause()
+
+            names = [loc["name"] for loc in app.locales]
+            assert names == ["Tokyo", "Detroit", "London"]
+
+    @patch("tick.app.send_command")
+    async def test_add_locale_after_first_inserts_at_position_zero(self, mock_send, config_path):
+        mock_send.return_value = [
+            {"name": "add_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo", "after": "FIRST"}},
+        ]
+        async with TickApp().run_test() as pilot:
+            app = pilot.app
+            inp = app.query_one("#command-input")
+            inp.value = "add Brasil first"
+            await inp.action_submit()
+            await pilot.pause()
+
+            assert app.locales[0]["name"] == "Brasil"
+            assert len(app.locales) == 4
+
+    @patch("tick.app.send_command")
+    async def test_move_locale_persists(self, mock_send, config_path):
+        mock_send.return_value = [
+            {"name": "add_locale", "arguments": {"name": "Tokyo", "iana_tz": "Asia/Tokyo", "after": "Detroit"}},
+        ]
+        async with TickApp().run_test() as pilot:
+            inp = pilot.app.query_one("#command-input")
+            inp.value = "move Tokyo after Detroit"
+            await inp.action_submit()
+            await pilot.pause()
+
+        saved = json.loads(config_path.read_text())
+        names = [loc["name"] for loc in saved]
+        assert names == ["Detroit", "Tokyo", "London"]
+
+
 class TestCommandFlow:
     @patch("tick.app.send_command")
     async def test_input_clears_after_submit(self, mock_send, config_path):

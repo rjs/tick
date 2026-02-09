@@ -130,14 +130,34 @@ class TickApp(App):
             self._persist_locales()
         self.rebuild_table()
 
-    def _add_locale(self, name: str, iana_tz: str | None = None) -> None:
+    def _add_locale(self, name: str, iana_tz: str | None = None, after: str | None = None) -> None:
         iana_tz = self._validate_iana_tz(name, iana_tz)
         if iana_tz is None:
             self.notify(f"Could not resolve timezone for '{name}'", severity="warning")
             return
-        if any(loc["name"].lower() == name.lower() for loc in self.locales):
-            return
-        self.locales.append({"name": name, "iana_tz": iana_tz})
+
+        # If locale already exists, treat as a move
+        idx = next(
+            (i for i, loc in enumerate(self.locales) if loc["name"].lower() == name.lower()),
+            None,
+        )
+        if idx is not None:
+            if after is None:
+                return  # Already exists, no repositioning requested
+            locale = self.locales.pop(idx)
+        else:
+            locale = {"name": name, "iana_tz": iana_tz}
+
+        if after is not None and after.upper() == "FIRST":
+            self.locales.insert(0, locale)
+        elif after is not None:
+            for i, loc in enumerate(self.locales):
+                if loc["name"].lower() == after.lower():
+                    self.locales.insert(i + 1, locale)
+                    return
+            self.locales.append(locale)
+        else:
+            self.locales.append(locale)
 
     def _remove_locale(self, name: str) -> None:
         self.locales = [
