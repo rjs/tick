@@ -1,4 +1,6 @@
+import json
 from datetime import date as Date
+from pathlib import Path
 from zoneinfo import available_timezones
 
 from textual import work
@@ -49,8 +51,21 @@ class TickApp(App):
         self.load_defaults()
         self.rebuild_table()
 
+    def _config_path(self) -> Path:
+        return Path.home() / ".config" / "tick" / "config.json"
+
+    def _persist_locales(self) -> None:
+        path = self._config_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.locales, indent=2))
+
     def load_defaults(self) -> None:
-        self.locales = list(DEFAULTS)
+        path = self._config_path()
+        if path.exists():
+            self.locales = json.loads(path.read_text())
+        else:
+            self.locales = list(DEFAULTS)
+            self._persist_locales()
         self.time_window = Date.today()
 
     def rebuild_table(self) -> None:
@@ -98,15 +113,21 @@ class TickApp(App):
             label.add_class("hidden")
 
     def _execute_tool_calls(self, tool_calls: list[dict]) -> None:
+        locale_tools = {"add_locale", "remove_locale"}
         dispatch = {
             "add_locale": self._add_locale,
             "remove_locale": self._remove_locale,
             "set_time_window": self._set_time_window,
         }
+        mutated = False
         for tc in tool_calls:
             handler = dispatch.get(tc["name"])
             if handler:
                 handler(**tc["arguments"])
+            if tc["name"] in locale_tools:
+                mutated = True
+        if mutated:
+            self._persist_locales()
         self.rebuild_table()
 
     def _add_locale(self, name: str, iana_tz: str | None = None) -> None:
