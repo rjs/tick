@@ -15,7 +15,7 @@ You are a timezone assistant. Parse the user's command into tool calls.
 The current year is {year}.
 
 Rules:
-- When calling add_locale, you MUST provide BOTH the "name" and "iana_tz" arguments. Never omit iana_tz.
+- When calling place_locale, you MUST provide BOTH the "name" and "iana_tz" arguments. Never omit iana_tz.
 - Resolve locale names to IANA timezone identifiers. Examples:
   "Brasil" → name="Brasil", iana_tz="America/Sao_Paulo"
   "Tokyo" → name="Tokyo", iana_tz="Asia/Tokyo"
@@ -25,21 +25,21 @@ Rules:
   "Paris" → name="Paris", iana_tz="Europe/Paris"
   "Sydney" → name="Sydney", iana_tz="Australia/Sydney"
 - For dates, convert to ISO 8601 format (YYYY-MM-DD). Use {year} as the year when not specified.
-- Use the "after" parameter on add_locale to control position. If "after" is omitted, the locale is appended at the end.
-- To move an existing locale, call add_locale with its current iana_tz and the desired "after" value.
+- Use the "after" parameter on place_locale to control position. If "after" is omitted, the locale is appended at the end.
+- To move an existing locale, call place_locale with its current iana_tz and the desired "after" value.
 - To place a locale first (before all others), set after to "FIRST".
 - Examples:
-  "add Tokyo" → add_locale(name="Tokyo", iana_tz="Asia/Tokyo")
-  "add Tokyo after Detroit" → add_locale(name="Tokyo", iana_tz="Asia/Tokyo", after="Detroit")
-  "move London to first" → add_locale(name="London", iana_tz="Europe/London", after="FIRST")
-  "move London after Tokyo" → add_locale(name="London", iana_tz="Europe/London", after="Tokyo")
-- A single command may require multiple tool calls (e.g. "feb 12 in Brasil" → set_time_window + add_locale).
+  "add Tokyo" → place_locale(name="Tokyo", iana_tz="Asia/Tokyo")
+  "add Tokyo after Detroit" → place_locale(name="Tokyo", iana_tz="Asia/Tokyo", after="Detroit")
+  "move London to first" → place_locale(name="London", iana_tz="Europe/London", after="FIRST")
+  "move London after Tokyo" → place_locale(name="London", iana_tz="Europe/London", after="Tokyo")
+- A single command may require multiple tool calls (e.g. "feb 12 in Brasil" → set_time_window + place_locale).
 - Only use the provided tools. Do not output plain text.
 """
 
 
-def add_locale(name: str, iana_tz: str, after: str | None = None) -> None:
-    """Add a new locale column, or reposition an existing one.
+def place_locale(name: str, iana_tz: str, after: str | None = None) -> None:
+    """Place a locale column in the timezone table — adds new or repositions existing.
 
     Args:
         name: Display name for the locale (e.g. "Brasil", "Tokyo").
@@ -64,13 +64,13 @@ def set_time_window(date: str) -> None:
     """
 
 
-TOOLS = [add_locale, remove_locale, set_time_window]
+TOOLS = [place_locale, remove_locale, set_time_window]
 
 
 def send_command(user_input: str) -> list[dict]:
     """Send a natural language command to the LLM and return parsed tool calls.
 
-    Returns a list of dicts like: [{"name": "add_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo"}}]
+    Returns a list of dicts like: [{"name": "place_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo"}}]
     Raises OllamaError on any communication failure.
     """
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(year=date.today().year)

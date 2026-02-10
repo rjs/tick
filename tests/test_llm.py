@@ -22,7 +22,7 @@ def _mock_response(tool_calls=None):
 class TestTools:
     def test_add_locale_has_after_param(self):
         import inspect
-        sig = inspect.signature(next(t for t in TOOLS if t.__name__ == "add_locale"))
+        sig = inspect.signature(next(t for t in TOOLS if t.__name__ == "place_locale"))
         assert "after" in sig.parameters
 
 
@@ -31,12 +31,12 @@ class TestSendCommand:
     def test_returns_tool_calls(self, mock_chat):
         mock_chat.return_value = _mock_response(
             tool_calls=[
-                _make_tool_call("add_locale", {"name": "Brasil", "iana_tz": "America/Sao_Paulo"}),
+                _make_tool_call("place_locale", {"name": "Brasil", "iana_tz": "America/Sao_Paulo"}),
             ]
         )
         result = send_command("add Brasil")
         assert result == [
-            {"name": "add_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo"}},
+            {"name": "place_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo"}},
         ]
 
     @patch("tick.llm.ollama.chat")
@@ -44,13 +44,13 @@ class TestSendCommand:
         mock_chat.return_value = _mock_response(
             tool_calls=[
                 _make_tool_call("set_time_window", {"date": "2026-02-12"}),
-                _make_tool_call("add_locale", {"name": "Brasil", "iana_tz": "America/Sao_Paulo"}),
+                _make_tool_call("place_locale", {"name": "Brasil", "iana_tz": "America/Sao_Paulo"}),
             ]
         )
         result = send_command("feb 12 in Brasil")
         assert len(result) == 2
         assert result[0]["name"] == "set_time_window"
-        assert result[1]["name"] == "add_locale"
+        assert result[1]["name"] == "place_locale"
 
     @patch("tick.llm.ollama.chat")
     def test_no_tool_calls(self, mock_chat):

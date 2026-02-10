@@ -113,9 +113,9 @@ class TickApp(App):
             label.add_class("hidden")
 
     def _execute_tool_calls(self, tool_calls: list[dict]) -> None:
-        locale_tools = {"add_locale", "remove_locale"}
+        locale_tools = {"place_locale", "remove_locale"}
         dispatch = {
-            "add_locale": self._add_locale,
+            "place_locale": self._handle_place_locale,
             "remove_locale": self._remove_locale,
             "set_time_window": self._set_time_window,
         }
@@ -130,32 +130,43 @@ class TickApp(App):
             self._persist_locales()
         self.rebuild_table()
 
-    def _add_locale(self, name: str, iana_tz: str | None = None, after: str | None = None) -> None:
+    def _handle_place_locale(self, name: str, iana_tz: str | None = None, after: str | None = None) -> None:
         iana_tz = self._validate_iana_tz(name, iana_tz)
         if iana_tz is None:
             self.notify(f"Could not resolve timezone for '{name}'", severity="warning")
             return
 
-        # If locale already exists, treat as a move
-        idx = next(
-            (i for i, loc in enumerate(self.locales) if loc["name"].lower() == name.lower()),
-            None,
-        )
+        idx = self._find_locale(name)
         if idx is not None:
             if after is None:
                 return  # Already exists, no repositioning requested
-            locale = self.locales.pop(idx)
+            locale = self._extract_locale(idx)
         else:
-            locale = {"name": name, "iana_tz": iana_tz}
+            locale = self._create_locale(name, iana_tz)
 
+        self._insert_at(locale, after)
+
+    def _extract_locale(self, idx: int) -> dict:
+        return self.locales.pop(idx)
+
+    def _create_locale(self, name: str, iana_tz: str) -> dict:
+        return {"name": name, "iana_tz": iana_tz}
+
+    def _find_locale(self, name: str) -> int | None:
+        return next(
+            (i for i, loc in enumerate(self.locales) if loc["name"].lower() == name.lower()),
+            None,
+        )
+
+    def _insert_at(self, locale: dict, after: str | None) -> None:
         if after is not None and after.upper() == "FIRST":
             self.locales.insert(0, locale)
         elif after is not None:
-            for i, loc in enumerate(self.locales):
-                if loc["name"].lower() == after.lower():
-                    self.locales.insert(i + 1, locale)
-                    return
-            self.locales.append(locale)
+            idx = self._find_locale(after)
+            if idx is not None:
+                self.locales.insert(idx + 1, locale)
+            else:
+                self.locales.append(locale)
         else:
             self.locales.append(locale)
 

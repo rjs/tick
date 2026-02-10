@@ -49,7 +49,7 @@ class TestPersistence:
     @patch("tick.app.send_command")
     async def test_add_locale_persists(self, mock_send, config_path):
         mock_send.return_value = [
-            {"name": "add_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo"}},
+            {"name": "place_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo"}},
         ]
         async with TickApp().run_test() as pilot:
             inp = pilot.app.query_one("#command-input")
@@ -96,7 +96,7 @@ class TestPositioning:
     @patch("tick.app.send_command")
     async def test_add_locale_after_inserts_at_position(self, mock_send, config_path):
         mock_send.return_value = [
-            {"name": "add_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo", "after": "Detroit"}},
+            {"name": "place_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo", "after": "Detroit"}},
         ]
         async with TickApp().run_test() as pilot:
             app = pilot.app
@@ -111,7 +111,7 @@ class TestPositioning:
     @patch("tick.app.send_command")
     async def test_add_locale_after_unknown_appends(self, mock_send, config_path):
         mock_send.return_value = [
-            {"name": "add_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo", "after": "Nonexistent"}},
+            {"name": "place_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo", "after": "Nonexistent"}},
         ]
         async with TickApp().run_test() as pilot:
             app = pilot.app
@@ -126,7 +126,7 @@ class TestPositioning:
     @patch("tick.app.send_command")
     async def test_move_existing_locale_after(self, mock_send, config_path):
         mock_send.return_value = [
-            {"name": "add_locale", "arguments": {"name": "Tokyo", "iana_tz": "Asia/Tokyo", "after": "Detroit"}},
+            {"name": "place_locale", "arguments": {"name": "Tokyo", "iana_tz": "Asia/Tokyo", "after": "Detroit"}},
         ]
         async with TickApp().run_test() as pilot:
             app = pilot.app
@@ -141,7 +141,7 @@ class TestPositioning:
     @patch("tick.app.send_command")
     async def test_move_existing_locale_to_first(self, mock_send, config_path):
         mock_send.return_value = [
-            {"name": "add_locale", "arguments": {"name": "Tokyo", "iana_tz": "Asia/Tokyo", "after": "FIRST"}},
+            {"name": "place_locale", "arguments": {"name": "Tokyo", "iana_tz": "Asia/Tokyo", "after": "FIRST"}},
         ]
         async with TickApp().run_test() as pilot:
             app = pilot.app
@@ -156,7 +156,7 @@ class TestPositioning:
     @patch("tick.app.send_command")
     async def test_add_locale_after_first_inserts_at_position_zero(self, mock_send, config_path):
         mock_send.return_value = [
-            {"name": "add_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo", "after": "FIRST"}},
+            {"name": "place_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo", "after": "FIRST"}},
         ]
         async with TickApp().run_test() as pilot:
             app = pilot.app
@@ -171,7 +171,7 @@ class TestPositioning:
     @patch("tick.app.send_command")
     async def test_move_locale_persists(self, mock_send, config_path):
         mock_send.return_value = [
-            {"name": "add_locale", "arguments": {"name": "Tokyo", "iana_tz": "Asia/Tokyo", "after": "Detroit"}},
+            {"name": "place_locale", "arguments": {"name": "Tokyo", "iana_tz": "Asia/Tokyo", "after": "Detroit"}},
         ]
         async with TickApp().run_test() as pilot:
             inp = pilot.app.query_one("#command-input")
@@ -198,7 +198,7 @@ class TestCommandFlow:
     @patch("tick.app.send_command")
     async def test_add_locale_via_tool_call(self, mock_send, config_path):
         mock_send.return_value = [
-            {"name": "add_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo"}},
+            {"name": "place_locale", "arguments": {"name": "Brasil", "iana_tz": "America/Sao_Paulo"}},
         ]
         async with TickApp().run_test() as pilot:
             app = pilot.app
@@ -247,7 +247,7 @@ class TestCommandFlow:
     @patch("tick.app.send_command")
     async def test_duplicate_locale_not_added(self, mock_send, config_path):
         mock_send.return_value = [
-            {"name": "add_locale", "arguments": {"name": "Detroit", "iana_tz": "America/Detroit"}},
+            {"name": "place_locale", "arguments": {"name": "Detroit", "iana_tz": "America/Detroit"}},
         ]
         async with TickApp().run_test() as pilot:
             app = pilot.app
@@ -263,7 +263,7 @@ class TestCommandFlow:
     @patch("tick.app.send_command")
     async def test_add_locale_without_iana_tz(self, mock_send, mock_geo, config_path):
         mock_send.return_value = [
-            {"name": "add_locale", "arguments": {"name": "Brasil"}},
+            {"name": "place_locale", "arguments": {"name": "Brasil"}},
         ]
         async with TickApp().run_test() as pilot:
             app = pilot.app
