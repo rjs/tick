@@ -55,10 +55,10 @@ LLM does double duty: handles natural language commands AND resolves locale name
 | **A2** | **Local tz library** — `zoneinfo.ZoneInfo(iana_tz)` creates timezone objects. `datetime.now(tz)` and `datetime(y,m,d,h, tzinfo=tz)` compute local times. `zoneinfo.available_timezones()` provides the ~590 valid IANA identifiers for validation. | |
 | **A3** | **Hour table builder** — Iterates 24 hours for `time_window` date. For each hour, creates a UTC datetime, converts to each locale's timezone via `dt.astimezone(tz)`, formats as `"3:00 PM"`. Returns list of rows, each row is a list of formatted time strings. Columns are locale names. | |
 | **A4** | **Default config** — `DEFAULTS` dict mapping display names to IANA identifiers, e.g. `{"Detroit": "America/Detroit", "London": "Europe/London"}`. Used as seed when no persisted config exists. | |
-| **A5** | **LLM input handler** — On `Input.Submitted`, sends user text to `ollama.chat('qwen2.5:3b', messages=[system_prompt, user_msg], tools=[add_locale, remove_locale, set_time_window, move_locale])`. System prompt instructs: "Parse commands into tool calls. Resolve locale names to IANA identifiers. Support positioning with `after` param." Returns `response.message.tool_calls` list to A6. Async call so TUI stays responsive (~1-2s). | ⚠️ |
-| **A6** | **Tool executor** — Loops over tool calls from A5. `add_locale(name, iana_tz, after)`: validates tz, inserts after named locale (or appends). `remove_locale(name)`: removes matching entry. `move_locale(name, after)`: reorders existing locale. `set_time_window(date)`: parses ISO date string. After all calls processed, persists locales via A7 (if any locale mutation occurred), then triggers rebuild. If `iana_tz` validation fails, falls back to Open-Meteo geocoding API. | ⚠️ |
+| **A5** | **LLM input handler** — On `Input.Submitted`, sends user text to `ollama.chat('qwen2.5:3b', messages=[system_prompt, user_msg], tools=[add_locale, remove_locale, set_time_window])`. System prompt instructs: "Parse commands into tool calls. Resolve locale names to IANA identifiers. To move an existing locale, call `add_locale` with desired `after` value." Returns `response.message.tool_calls` list to A6. Async call so TUI stays responsive (~1-2s). | ⚠️ |
+| **A6** | **Tool executor** — Loops over tool calls from A5. `add_locale(name, iana_tz, after)`: validates tz, inserts after named locale (or appends); if locale already exists and `after` is provided, repositions it. `remove_locale(name)`: removes matching entry. `set_time_window(date)`: parses ISO date string. After all calls processed, persists locales via A7 (if any locale mutation occurred), then triggers rebuild. If `iana_tz` validation fails, falls back to Open-Meteo geocoding API. | ⚠️ |
 | **A7** | **Config persistence** — `~/.config/tick/config.json` stores the ordered locales list as `[{name, iana_tz}, ...]`. `load_defaults()` reads from file; if absent, seeds from A4 DEFAULTS and writes. After any locale mutation (add/remove/move), writes current `locales` to file. Time window is never persisted. | ⚠️ |
-| **A8** | **Locale positioning** — `add_locale` gains optional `after` parameter (locale name to insert after; omit to append). New `move_locale(name, after)` tool moves an existing locale to after the named locale (`after=null` → move to first). LLM system prompt updated to describe positioning. | ⚠️ |
+| **A8** | **Locale positioning** — `add_locale` gains optional `after` parameter (locale name to insert after; omit to append). When called for an existing locale with `after`, it repositions rather than duplicating. `after="FIRST"` places a locale at position 0. LLM system prompt updated to describe positioning. No separate `move_locale` tool — the 3b model can't reliably distinguish two tools with similar `after` parameters, so add and move are merged. | ⚠️ |
 
 ---
 
@@ -113,7 +113,7 @@ All requirements pass with A5–A8 changes. A5, A6 modified; A7, A8 new — all 
 |---|-------|-----------|------------|---------|-----------|------------|:----:|
 | N1 | P1 | app | `on_input_submitted()` | call | → N2, → S3 | — | |
 | N2 | P2 | ollama | `ollama.chat(model, messages, tools)` | call | — | → N3 | **Δ** |
-| N3 | P1 | app | `execute_tool_calls(tool_calls)` | call | → N4, → N5, → N6, → N13 | → N12, → N7 | **Δ** |
+| N3 | P1 | app | `execute_tool_calls(tool_calls)` | call | → N4, → N5, → N6 | → N12, → N7 | **Δ** |
 | N4 | P1 | app | `add_locale(name, iana_tz, after)` | call | → N8 | → S1 | **Δ** |
 | N5 | P1 | app | `remove_locale(name)` | call | — | → S1 | |
 | N6 | P1 | app | `set_time_window(date)` | call | — | → S2 | |
@@ -123,7 +123,6 @@ All requirements pass with A5–A8 changes. A5, A6 modified; A7, A8 new — all 
 | N10 | P3 | open-meteo | `geocoding-api.open-meteo.com/v1/search` | call | — | → N8 | |
 | N11 | P1 | app | `load_defaults()` | call | → S4 | → S1, → S2, → N7 | **Δ** |
 | N12 | P1 | app | `persist_locales()` | call | → S4 | — | **NEW** |
-| N13 | P1 | app | `move_locale(name, after)` | call | — | → S1 | **NEW** |
 
 ### Data Stores
 
@@ -138,7 +137,7 @@ All requirements pass with A5–A8 changes. A5, A6 modified; A7, A8 new — all 
 
 **Startup flow (Δ v1.2):** `N11 load_defaults()` reads `S4` config file → if present, loads locales to `S1`; if absent, seeds from A4 DEFAULTS and writes to `S4` → sets today's date to `S2` → calls `N7 rebuild_table()` → `N9 compute_hours()` uses `zoneinfo` to convert each hour to each locale's timezone → `N7` updates `U1` (date label), `U2` (column headers), `U3` (hour rows).
 
-**Command flow (Δ v1.2):** User types in `U4` → submit fires `N1` → sets `S3` loading (shows `U5`) → calls `N2` Ollama with tools (now includes `move_locale`, `after` param on `add_locale`) → LLM returns tool calls → `N3` loops them: `N4` adds locale at position (validates via `N8`, falls back to `N10`), `N5` removes locale, `N13` moves locale, `N6` sets date → after all calls, if any locale mutation occurred, `N3` calls `N12 persist_locales()` which writes `S1` to `S4` → then `N3` calls `N7` rebuild → table updates.
+**Command flow (Δ v1.2):** User types in `U4` → submit fires `N1` → sets `S3` loading (shows `U5`) → calls `N2` Ollama with tools (`add_locale` with `after` param, `remove_locale`, `set_time_window`) → LLM returns tool calls → `N3` loops them: `N4` adds locale at position or repositions existing one (validates via `N8`, falls back to `N10`), `N5` removes locale, `N6` sets date → after all calls, if any locale mutation occurred, `N3` calls `N12 persist_locales()` which writes `S1` to `S4` → then `N3` calls `N7` rebuild → table updates.
 
 ### Mermaid
 
@@ -174,7 +173,6 @@ flowchart TB
         N9["N9: compute_hours()"]
         N11["N11: load_defaults() Δ"]
         N12["N12: persist_locales() ⭑"]
-        N13["N13: move_locale() ⭑"]
     end
 
     subgraph P2["P2: Ollama"]
@@ -202,14 +200,12 @@ flowchart TB
     N3 --> N4
     N3 --> N5
     N3 --> N6
-    N3 -->|⭑| N13
     N4 --> N8
     N8 --> N10
     N10 -.-> N8
     N8 -.-> N4
     N4 --> S1
     N5 --> S1
-    N13 -->|⭑| S1
     N6 --> S2
 
     %% Persist after locale mutations
@@ -227,13 +223,11 @@ flowchart TB
     N7 --> U2
     N7 --> U3
 
-    %% Style new wires (v1.2) — indices: 0=N11→S4, 13=N3→N13, 20=N13→S1, 22=N3→N12, 23=S1→N12, 24=N12→S4
+    %% Style new wires (v1.2) — indices: 0=N11→S4, 19=N3→N12, 20=S1→N12, 21=N12→S4
     linkStyle 0 stroke:#4caf50,stroke-width:2px
-    linkStyle 13 stroke:#4caf50,stroke-width:2px
+    linkStyle 19 stroke:#4caf50,stroke-width:2px
     linkStyle 20 stroke:#4caf50,stroke-width:2px
-    linkStyle 22 stroke:#4caf50,stroke-width:2px
-    linkStyle 23 stroke:#4caf50,stroke-width:2px
-    linkStyle 24 stroke:#4caf50,stroke-width:2px
+    linkStyle 21 stroke:#4caf50,stroke-width:2px
 
     classDef ui fill:#ffb6c1,stroke:#d87093,color:#000
     classDef nonui fill:#d3d3d3,stroke:#808080,color:#000
@@ -245,7 +239,7 @@ flowchart TB
     class N1,N5,N6,N7,N8,N9,N10 nonui
     class S1,S2,S3 store
     class N2,N3,N4,N11 changed
-    class N12,N13,S4 new
+    class N12,S4 new
 ```
 
 **Legend:**
@@ -267,9 +261,9 @@ flowchart TB
 | # | Slice | Parts | Demo |
 |---|-------|-------|------|
 | V3 | Locale persistence | A7, A6 (persist wiring) | "Add Brasil, quit, relaunch — Brasil is still there" |
-| V4 | Locale positioning | A8, A5 (tool defs), A6 (move dispatch + after param) | "Type 'add Tokyo after Detroit' — Tokyo appears between Detroit and London" |
+| V4 | Locale positioning | A8, A5 (tool defs), A6 (after param) | "Type 'add Tokyo after Detroit' — Tokyo appears between Detroit and London" |
 
-V3 before V4 — persistence lands first. When V4 adds `move_locale`, the persist mechanism already captures the new order because it just writes S1.
+V3 before V4 — persistence lands first. When V4 adds the `after` parameter to `add_locale`, the persist mechanism already captures the new order because it just writes S1.
 
 ### V3: Locale persistence
 
@@ -286,9 +280,8 @@ V3 before V4 — persistence lands first. When V4 adds `move_locale`, the persis
 | # | Component | Affordance | Control | Wires Out | Returns To | v1.2 |
 |---|-----------|------------|---------|-----------|------------|:----:|
 | N2 | ollama | `ollama.chat(model, messages, tools)` | call | — | → N3 | **Δ** |
-| N3 | app | `execute_tool_calls(tool_calls)` | call | → N13 | → N7 | **Δ** |
+| N3 | app | `execute_tool_calls(tool_calls)` | call | → N4 | → N7 | **Δ** |
 | N4 | app | `add_locale(name, iana_tz, after)` | call | → N8 | → S1 | **Δ** |
-| N13 | app | `move_locale(name, after)` | call | — | → S1 | **NEW** |
 
 ### Sliced Breadboard
 
@@ -328,7 +321,6 @@ flowchart TB
         N2["N2: ollama.chat() Δ"]
         N3["N3: execute_tool_calls() Δ"]
         N4["N4: add_locale(after) Δ"]
-        N13["N13: move_locale() ⭑"]
     end
 
     existing ~~~ slice3
@@ -351,14 +343,12 @@ flowchart TB
     N3 --> N4
     N3 --> N5
     N3 --> N6
-    N3 -->|⭑| N13
     N4 --> N8
     N8 --> N10
     N10 -.-> N8
     N8 -.-> N4
     N4 --> S1
     N5 --> S1
-    N13 -->|⭑| S1
     N6 --> S2
 
     %% Persist after locale mutations (V3)
@@ -384,13 +374,11 @@ flowchart TB
     style table fill:transparent,stroke:#888,stroke-width:1px
     style footer fill:transparent,stroke:#888,stroke-width:1px
 
-    %% Style new wires
+    %% Style new wires — indices: 0=N11→S4, 19=N3→N12, 20=S1→N12, 21=N12→S4
     linkStyle 0 stroke:#4caf50,stroke-width:2px
-    linkStyle 13 stroke:#4caf50,stroke-width:2px
+    linkStyle 19 stroke:#4caf50,stroke-width:2px
     linkStyle 20 stroke:#4caf50,stroke-width:2px
-    linkStyle 22 stroke:#4caf50,stroke-width:2px
-    linkStyle 23 stroke:#4caf50,stroke-width:2px
-    linkStyle 24 stroke:#4caf50,stroke-width:2px
+    linkStyle 21 stroke:#4caf50,stroke-width:2px
 
     classDef ui fill:#ffb6c1,stroke:#d87093,color:#000
     classDef nonui fill:#d3d3d3,stroke:#808080,color:#000
@@ -402,13 +390,13 @@ flowchart TB
     class N1,N5,N6,N7,N8,N9,N10 nonui
     class S1,S2,S3 store
     class N2,N3,N4,N11 changed
-    class N12,N13,S4 new
+    class N12,S4 new
 ```
 
 **Legend:**
 - **Grey boundary** = Existing (V1 + V2) — already built
 - **Orange boundary (V3)** = Locale persistence — config file read/write
-- **Purple boundary (V4)** = Locale positioning — after param, move_locale, LLM tool defs
+- **Purple boundary (V4)** = Locale positioning — after param on add_locale, LLM tool defs
 - **Orange nodes (Δ)** = Modified in v1.2
 - **Green nodes (⭑)** = New in v1.2
 - **Green lines (⭑)** = New wires in v1.2
